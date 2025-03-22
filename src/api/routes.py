@@ -1,22 +1,40 @@
-"""
-This module takes care of starting the API Server, Loading the DB and Adding the endpoints
-"""
-from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User
-from api.utils import generate_sitemap, APIException
-from flask_cors import CORS
+@app.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+    role = data.get("role", "user")  # Si no se envía, será "user"
 
-api = Blueprint('api', __name__)
+    if not email or not password:
+        return jsonify({"msg": "Correo y contraseña requeridos"}), 400
 
-# Allow CORS requests to this API
-CORS(api)
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        return jsonify({"msg": "El usuario ya existe"}), 400
+
+    new_user = User(email=email, role=role)
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"msg": "Usuario registrado exitosamente"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password):
+        return jsonify({"msg": "Correo o contraseña incorrectos"}), 401
+
+    token = jwt.encode({"user_id": user.id, "role": user.role, "exp": datetime.utcnow() + timedelta(hours=1)},
+                       app.config["SECRET_KEY"], algorithm="HS256")
+
+    refresh_token = jwt.encode({"user_id": user.id, "type": "refresh", "exp": datetime.utcnow() + timedelta(days=7)},
+                               app.config["SECRET_KEY"], algorithm="HS256")
+
+    return jsonify({"token": token, "refresh_token": refresh_token, "role": user.role}), 200
 
 
-@api.route('/hello', methods=['POST', 'GET'])
-def handle_hello():
-
-    response_body = {
-        "message": "Hello! I'm a message that came from the backend, check the network tab on the google inspector and you will see the GET request"
-    }
-
-    return jsonify(response_body), 200
